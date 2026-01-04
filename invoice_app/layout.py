@@ -791,6 +791,14 @@ def build_layout(app):
                                 placeholder="C:/path/to/dataset",
                                 className="text-input",
                             ),
+                            html.Label("Dataset ZIP upload (optional)"),
+                            dcc.Upload(
+                                id="eval-dataset-upload",
+                                children=html.Div(["Drop dataset ZIP here or ", html.B("click to select")]),
+                                multiple=False,
+                                className="upload-area",
+                            ),
+                            html.Div(id="eval-upload-status", className="muted"),
                             html.Label("Samples to evaluate"),
                             dcc.Input(
                                 id="eval-sample-limit",
@@ -1054,6 +1062,7 @@ def build_layout(app):
             dcc.Store(id="ds-prompt-store"),
             dcc.Store(id="eval-job-id"),
             dcc.Store(id="eval-results-store"),
+            dcc.Store(id="eval-uploaded-dataset-path"),
             dcc.Download(id="download-invoice"),
             dcc.Download(id="download-pdf"),
             dcc.Download(id="download-ocr"),

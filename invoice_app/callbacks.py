@@ -4,6 +4,8 @@ import io
 import json
 import random
 import re
+import shutil
+import tempfile
 import threading
 import traceback
 import uuid
@@ -974,6 +976,29 @@ def register_callbacks(app):
                     zf.write(file_path, arcname=str(file_path.relative_to(folder)))
         return buffer.getvalue()
 
+    def _safe_extract_zip(zip_bytes: bytes, dest: Path) -> int:
+        extracted = 0
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            for info in zf.infolist():
+                name = info.filename
+                if not name or name.endswith("/"):
+                    continue
+                target = Path(name)
+                if target.is_absolute() or ".." in target.parts:
+                    raise RuntimeError(f"Unsafe path in ZIP: {name}")
+                out_path = dest / target
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src, out_path.open("wb") as dst:
+                    dst.write(src.read())
+                extracted += 1
+        return extracted
+
+    def _resolve_dataset_root(dest: Path) -> Path:
+        entries = list(dest.iterdir())
+        if len(entries) == 1 and entries[0].is_dir():
+            return entries[0]
+        return dest
+
     def _parse_llm_json(content: str):
         """Robustly parse LLM output that should be a JSON array."""
         def _strip_code_fence(txt: str) -> str:
@@ -1541,6 +1566,56 @@ def register_callbacks(app):
         zip_name = f"{folder.name or 'dataset'}_{stamp}.zip"
         return dcc.send_bytes(zip_bytes, zip_name), _status("Dataset ZIP prepared.", "success")
 
+    @app.callback(
+        Output("eval-upload-status", "children"),
+        Output("eval-uploaded-dataset-path", "data"),
+        Output("eval-dataset-path", "value"),
+        Input("eval-dataset-upload", "contents"),
+        State("eval-dataset-upload", "filename"),
+        State("eval-uploaded-dataset-path", "data"),
+        prevent_initial_call=True,
+    )
+    def handle_eval_dataset_upload(contents, filename, previous_path):
+        if not contents:
+            raise PreventUpdate
+        if previous_path:
+            try:
+                shutil.rmtree(previous_path, ignore_errors=True)
+            except Exception:
+                pass
+        zip_bytes = _decode_upload_bytes(contents)
+        if not zip_bytes:
+            return _status("Upload is empty.", "warning"), None, no_update
+        if not zipfile.is_zipfile(io.BytesIO(zip_bytes)):
+            return _status("Upload must be a ZIP file.", "warning"), None, no_update
+        dest = Path(tempfile.mkdtemp(prefix="eval_dataset_"))
+        try:
+            extracted = _safe_extract_zip(zip_bytes, dest)
+            dataset_root = _resolve_dataset_root(dest)
+        except Exception as exc:  # noqa: BLE001
+            shutil.rmtree(dest, ignore_errors=True)
+            return _status(f"ZIP extract failed: {exc}", "danger"), None, no_update
+
+        pdf_count = len(list(dataset_root.rglob("*.pdf")))
+        ocr_count = len(list(dataset_root.rglob("*.ocr.json")))
+        json_count = len(
+            [
+                p
+                for p in dataset_root.rglob("*.json")
+                if not p.name.endswith(".ocr.json")
+                and not p.name.startswith("llm_response_raw_")
+                and not p.name.endswith("_failed.json")
+            ]
+        )
+        samples = evaluation.list_dataset_samples(dataset_root)
+        name = filename or "dataset.zip"
+        tone = "success" if samples else "warning"
+        status = (
+            f"Uploaded {name}: extracted {extracted} files. "
+            f"Found {len(samples)} samples (pdf={pdf_count}, json={json_count}, ocr={ocr_count})."
+        )
+        return _status(status, tone), str(dataset_root), str(dataset_root)
+
     # ---------- Model evaluation ----------
 
     _EVAL_JOBS: Dict[str, Dict[str, Any]] = {}
@@ -1972,6 +2047,7 @@ def register_callbacks(app):
         Output("eval-results-store", "data", allow_duplicate=True),
         Input("eval-run", "n_clicks"),
         State("eval-dataset-path", "value"),
+        State("eval-uploaded-dataset-path", "data"),
         State("eval-sample-limit", "value"),
         State("eval-shuffle", "value"),
         State("eval-seed", "value"),
@@ -1994,6 +2070,7 @@ def register_callbacks(app):
     def start_eval_job(
         _n,
         dataset_path,
+        uploaded_dataset_path,
         sample_limit,
         shuffle,
         seed,
@@ -2013,7 +2090,10 @@ def register_callbacks(app):
         max_pages,
     ):
         empty_figs = _build_eval_figures({})
-        if not dataset_path:
+        resolved_dataset_path = dataset_path
+        if uploaded_dataset_path and (not dataset_path or str(dataset_path) == str(uploaded_dataset_path)):
+            resolved_dataset_path = uploaded_dataset_path
+        if not resolved_dataset_path:
             return (
                 _status("Pick a dataset first.", "warning"),
                 "0",
@@ -2027,7 +2107,7 @@ def register_callbacks(app):
                 None,
                 None,
             )
-        if os.name != "nt" and _is_windows_path(dataset_path):
+        if os.name != "nt" and _is_windows_path(resolved_dataset_path):
             return (
                 _status("Dataset path is a Windows path. Use a server path like /data/datasets.", "warning"),
                 "0",
@@ -2041,10 +2121,10 @@ def register_callbacks(app):
                 None,
                 None,
             )
-        dataset_root = Path(dataset_path)
+        dataset_root = Path(resolved_dataset_path)
         if not dataset_root.exists():
             return (
-                _status(f"Dataset path not found on server: {dataset_path}", "warning"),
+                _status(f"Dataset path not found on server: {resolved_dataset_path}", "warning"),
                 "0",
                 "",
                 "",
@@ -2234,7 +2314,7 @@ def register_callbacks(app):
                         "api_base_url": api_base_url_alt or api_base_url,
                     }
         config = {
-            "dataset_path": dataset_path,
+            "dataset_path": resolved_dataset_path,
             "sample_limit": sample_count,
             "shuffle": "shuffle" in (shuffle or []),
             "seed": seed or 0,
