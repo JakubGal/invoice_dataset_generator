@@ -3,6 +3,8 @@ import json
 import mimetypes
 import os
 import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -200,7 +202,7 @@ def parse_table_totals(text: str) -> list[Dict[str, Any]]:
     return totals
 
 
-def build_ocr_ground_truth(pdf_bytes: bytes) -> str:
+def build_ocr_ground_truth(pdf_bytes: bytes, require_items: bool = False) -> str:
     """Extract text boxes from a PDF and return JSON with positions."""
     try:
         import fitz  # PyMuPDF
@@ -224,7 +226,94 @@ def build_ocr_ground_truth(pdf_bytes: bytes) -> str:
                 }
             )
     doc.close()
-    return json.dumps({"items": items}, ensure_ascii=False, indent=2)
+    if items:
+        return json.dumps({"items": items}, ensure_ascii=False, indent=2)
+
+    # Fallback to OCR if the PDF has no selectable text.
+    tesseract_cmd = _find_tesseract()
+    if not tesseract_cmd:
+        if require_items:
+            raise RuntimeError(
+                "No selectable text found and tesseract is not available. Install Tesseract (add it to PATH) and retry."
+            )
+        return json.dumps({"items": []}, ensure_ascii=False, indent=2)
+
+    def _pdf_pages_to_images() -> list[bytes]:
+        doc_local = fitz.open(stream=pdf_bytes, filetype="pdf")
+        images: list[bytes] = []
+        for page in doc_local:
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.7, 1.7), alpha=False)
+            images.append(pix.tobytes("png"))
+        doc_local.close()
+        return images
+
+    tesseract_langs = os.environ.get("TESSERACT_LANGS", "").strip()
+
+    def _tesseract_items(img_bytes: bytes, page_no: int) -> list[Dict[str, Any]]:
+        items_local: list[Dict[str, Any]] = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            img_path = Path(tmpdir) / "page.png"
+            img_path.write_bytes(img_bytes)
+            cmd = [tesseract_cmd, str(img_path), "stdout", "--oem", "1", "tsv"]
+            if tesseract_langs:
+                cmd.extend(["-l", tesseract_langs])
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        lines = result.stdout.splitlines()
+        if not lines:
+            return items_local
+        for line in lines[1:]:
+            parts = line.split("\t")
+            if len(parts) < 12:
+                continue
+            _, _, _, _, _, word_num, left, top, width, height, _conf, text = parts[:12]
+            if word_num == "0" or not text.strip():
+                continue
+            try:
+                x0 = float(left)
+                y0 = float(top)
+                x1 = x0 + float(width)
+                y1 = y0 + float(height)
+            except Exception:
+                continue
+            items_local.append(
+                {
+                    "page": page_no,
+                    "x0": x0,
+                    "y0": y0,
+                    "x1": x1,
+                    "y1": y1,
+                    "text": text,
+                }
+            )
+        return items_local
+
+    try:
+        ocr_items: list[Dict[str, Any]] = []
+        for idx, img_bytes in enumerate(_pdf_pages_to_images(), start=1):
+            ocr_items.extend(_tesseract_items(img_bytes, idx))
+        if require_items and not ocr_items:
+            raise RuntimeError("OCR produced no text boxes. Try different OCR settings or font/contrast choices.")
+        return json.dumps({"items": ocr_items}, ensure_ascii=False, indent=2)
+    except Exception:
+        if require_items:
+            raise
+        return json.dumps({"items": []}, ensure_ascii=False, indent=2)
+
+
+def _find_tesseract() -> Optional[str]:
+    env_candidates = [
+        os.environ.get("TESSERACT_CMD"),
+        os.environ.get("TESSERACT_PATH"),
+    ]
+    for candidate in env_candidates:
+        if candidate and Path(candidate).exists():
+            return str(Path(candidate))
+    return shutil.which("tesseract")
 
 
 def _find_wkhtmltopdf() -> Optional[str]:

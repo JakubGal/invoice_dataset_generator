@@ -1,12 +1,27 @@
 FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    TESSERACT_LANGS=eng+deu+ces+slk+fra+spa+ita+pol+nld+por+ara+hin+jpn+chi_sim
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
+    tesseract-ocr-eng \
+    tesseract-ocr-deu \
+    tesseract-ocr-ces \
+    tesseract-ocr-slk \
+    tesseract-ocr-fra \
+    tesseract-ocr-spa \
+    tesseract-ocr-ita \
+    tesseract-ocr-pol \
+    tesseract-ocr-nld \
+    tesseract-ocr-por \
+    tesseract-ocr-ara \
+    tesseract-ocr-hin \
+    tesseract-ocr-jpn \
+    tesseract-ocr-chi-sim \
     wkhtmltopdf \
     libgl1 \
     libglib2.0-0 \

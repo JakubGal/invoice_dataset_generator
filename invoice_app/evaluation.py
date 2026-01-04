@@ -1004,8 +1004,14 @@ def _pdf_pages_to_images(pdf_path: Path, zoom: float = 1.7) -> List[bytes]:
 
 
 def extract_text_tesseract(pdf_path: Path) -> str:
-    if not shutil.which("tesseract"):
+    tesseract_cmd = (
+        os.environ.get("TESSERACT_CMD")
+        or os.environ.get("TESSERACT_PATH")
+        or shutil.which("tesseract")
+    )
+    if not tesseract_cmd:
         raise RuntimeError("tesseract binary not found in PATH.")
+    tesseract_langs = os.environ.get("TESSERACT_LANGS", "").strip()
     pages = _pdf_pages_to_images(pdf_path)
     texts: List[str] = []
     for img_bytes in pages:
@@ -1013,8 +1019,11 @@ def extract_text_tesseract(pdf_path: Path) -> str:
             img_path = Path(tmpdir) / "page.png"
             img_path.write_bytes(img_bytes)
             try:
+                cmd = [tesseract_cmd, str(img_path), "stdout", "--oem", "1"]
+                if tesseract_langs:
+                    cmd.extend(["-l", tesseract_langs])
                 result = subprocess.run(
-                    ["tesseract", str(img_path), "stdout", "--oem", "1"],
+                    cmd,
                     capture_output=True,
                     text=True,
                     check=True,

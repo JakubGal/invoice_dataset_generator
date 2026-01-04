@@ -121,12 +121,27 @@ def _pdf_to_images(pdf_bytes: bytes, zoom: float = 1.5) -> List[Dict[str, Any]]:
 
 def _parse_ocr_items(text: str) -> List[Dict[str, Any]]:
     data = json.loads(text)
-    if isinstance(data, dict) and isinstance(data.get("items"), list):
-        items_raw = data["items"]
+    items_raw = None
+    if isinstance(data, dict):
+        items_raw = data.get("items")
+        if items_raw is None and isinstance(data.get("ocr"), dict):
+            items_raw = data["ocr"].get("items")
     elif isinstance(data, list):
         items_raw = data
-    else:
+
+    if isinstance(items_raw, str):
+        try:
+            parsed = json.loads(items_raw)
+            items_raw = parsed
+        except Exception:
+            items_raw = None
+
+    if items_raw is None:
         raise ValueError("OCR JSON should be an array or an object with an 'items' array.")
+    if not isinstance(items_raw, list):
+        raise ValueError("OCR JSON 'items' must be an array.")
+    if not items_raw:
+        return []
 
     items: List[Dict[str, Any]] = []
     for item in items_raw:
@@ -672,6 +687,12 @@ def register_callbacks(app):
         except Exception as exc:  # noqa: BLE001
             return no_update, _status(f"OCR JSON error: {exc}", "danger")
         name = filename or "JSON"
+        if not items:
+            return items, _status(
+                f"Loaded {name}, but no OCR boxes were found. The PDF may be image-only. "
+                "Install Tesseract and regenerate OCR JSON.",
+                "warning",
+            )
         return items, _status(f"Loaded {name} with {len(items)} boxes.", "success")
 
     @app.callback(
@@ -681,12 +702,14 @@ def register_callbacks(app):
         Input("ocr-items", "data"),
     )
     def render_ocr_viewer(pages, items):
-        if not pages and not items:
+        if pages is None and items is None:
             return [], "Upload a PDF and OCR JSON to see overlays."
         if not pages:
             return [], "Waiting for PDF..."
-        if not items:
+        if items is None:
             return [], "Waiting for OCR JSON..."
+        if items == []:
+            return [], "OCR JSON loaded but empty (no detected text boxes)."
 
         grouped: Dict[int, List[Dict[str, Any]]] = {}
         for item in items or []:
@@ -1313,7 +1336,7 @@ def register_callbacks(app):
                     pdf_bytes = html_to_pdf_bytes(
                         html_str, orientation=payload.get("template", {}).get("page", {}).get("orientation", "portrait")
                     )
-                    ocr_json = build_ocr_ground_truth(pdf_bytes)
+                    ocr_json = build_ocr_ground_truth(pdf_bytes, require_items=True)
                     base_name = f"sample_{sample_idx:03d}_{uuid.uuid4().hex[:6]}"
                     (target_dir / f"{base_name}.json").write_text(
                         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
