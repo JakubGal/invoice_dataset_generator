@@ -150,6 +150,4 @@ The Dockerfile installs Tesseract and common language packs and sets:
 
 If you deploy with Docker, rebuild after changing the Dockerfile.
 
-## License
 
-Internal / academic use unless otherwise specified.
