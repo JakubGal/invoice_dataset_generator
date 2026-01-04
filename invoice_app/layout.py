@@ -741,6 +741,7 @@ def build_layout(app):
                 children=[
                     html.Button("Refresh prompt from settings", id="ds-refresh-prompt", n_clicks=0, className="secondary"),
                     html.Button("Generate dataset", id="ds-generate", n_clicks=0, className="primary"),
+                    html.Button("Download dataset (ZIP)", id="ds-download-zip", n_clicks=0, className="ghost"),
                 ],
                 style={"marginTop": "8px"},
             ),
@@ -751,6 +752,7 @@ def build_layout(app):
                     html.Div(html.Div("Idle.", className="pill info"), id="ds-status", className="feedback"),
                 ],
             ),
+            html.Div(id="ds-download-status", className="feedback"),
             html.Label("Raw LLM output (first 1–2 samples)"),
             html.Pre(id="ds-log", className="json-editor", style={"minHeight": "140px"}),
             dcc.Store(id="ds-job-id"),
@@ -1055,6 +1057,7 @@ def build_layout(app):
             dcc.Download(id="download-invoice"),
             dcc.Download(id="download-pdf"),
             dcc.Download(id="download-ocr"),
+            dcc.Download(id="ds-download"),
             dcc.Download(id="download-eval-results"),
             dcc.Download(id="download-eval-plots"),
             dcc.Tabs(

@@ -1,11 +1,13 @@
 import base64
 import copy
+import io
 import json
 import random
 import re
 import threading
 import traceback
 import uuid
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -941,6 +943,14 @@ def register_callbacks(app):
         print(f"[Dataset] OpenAI response received. Prompt tokens: {prompt_tokens}, Completion tokens: {completion_tokens}")
         return content, prompt_tokens, completion_tokens
 
+    def _zip_dataset_folder(folder: Path) -> bytes:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for file_path in folder.rglob("*"):
+                if file_path.is_file():
+                    zf.write(file_path, arcname=str(file_path.relative_to(folder)))
+        return buffer.getvalue()
+
     def _parse_llm_json(content: str):
         """Robustly parse LLM output that should be a JSON array."""
         def _strip_code_fence(txt: str) -> str:
@@ -1482,6 +1492,31 @@ def register_callbacks(app):
             with _JOBS_LOCK:
                 _JOBS.pop(job_id, None)
         return status, str(progress), log_text
+
+    @app.callback(
+        Output("ds-download", "data"),
+        Output("ds-download-status", "children"),
+        Input("ds-download-zip", "n_clicks"),
+        State("ds-output-path", "value"),
+        prevent_initial_call=True,
+    )
+    def download_dataset_zip(_n, output_dir):
+        if not output_dir:
+            return no_update, _status("Set an output directory first.", "warning")
+        if os.name != "nt" and _is_windows_path(output_dir):
+            return no_update, _status("Output directory is a Windows path. Use a server path like /data/datasets.", "warning")
+        folder = Path(output_dir).expanduser()
+        if not folder.exists():
+            return no_update, _status(f"Output directory not found: {output_dir}", "warning")
+        if not folder.is_dir():
+            return no_update, _status("Output path is not a directory.", "warning")
+        files = [p for p in folder.rglob("*") if p.is_file()]
+        if not files:
+            return no_update, _status("No files found in output directory.", "warning")
+        zip_bytes = _zip_dataset_folder(folder)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_name = f"{folder.name or 'dataset'}_{stamp}.zip"
+        return dcc.send_bytes(zip_bytes, zip_name), _status("Dataset ZIP prepared.", "success")
 
     # ---------- Model evaluation ----------
 
