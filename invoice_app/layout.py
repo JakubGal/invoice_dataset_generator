@@ -8,6 +8,12 @@ def build_layout(app):
     gemini_api_key_default = os.environ.get("GEMINI_API_KEY", "")
     anthropic_api_key_default = os.environ.get("ANTHROPIC_API_KEY", "")
     api_base_url_default = os.environ.get("OPENAI_BASE_URL", "")
+    if os.name == "nt":
+        ds_output_default = "C:/Users/bukaj/Documents/Bakalarka/gen"
+        eval_dataset_path = "C:/Users/bukaj/Documents/Bakalarka/gen_EN_50"
+    else:
+        ds_output_default = "/data/datasets"
+        eval_dataset_path = "/data/datasets"
     api_key_alt_default = os.environ.get("OPENAI_API_KEY_ALT", "")
     api_base_url_alt_default = os.environ.get(
         "OPENAI_BASE_URL_ALT",
@@ -719,7 +725,7 @@ def build_layout(app):
                         id="ds-output-path",
                         type="text",
                         placeholder="C:/path/to/output",
-                        value="C:/Users/bukaj/Documents/Bakalarka/gen",
+                        value=ds_output_default,
                         className="text-input",
                     ),
                 ],
@@ -752,7 +758,6 @@ def build_layout(app):
         ],
     )
 
-    eval_dataset_path = "C:/Users/bukaj/Documents/Bakalarka/gen_EN_50"
     evaluation_tab = html.Div(
         className="main-grid",
         children=[

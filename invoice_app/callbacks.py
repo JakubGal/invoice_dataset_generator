@@ -1006,11 +1006,15 @@ def register_callbacks(app):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def _truncate_message(msg: str, limit: int = 180) -> str:
-        if not msg:
-            return ""
-        clean = " ".join(str(msg).split())
-        return clean if len(clean) <= limit else f"{clean[: limit - 3]}..."
+def _truncate_message(msg: str, limit: int = 180) -> str:
+    if not msg:
+        return ""
+    clean = " ".join(str(msg).split())
+    return clean if len(clean) <= limit else f"{clean[: limit - 3]}..."
+
+
+def _is_windows_path(path_str: str) -> bool:
+    return bool(re.match(r"^[A-Za-z]:[\\/]", path_str or ""))
 
     def _find_template_payload(obj):
         if isinstance(obj, dict):
@@ -1316,6 +1320,13 @@ def register_callbacks(app):
                 return _status("Provide API key and model to generate.", "warning"), "0", "", None
             if not output_dir:
                 return _status("Set an output directory first.", "warning"), "0", "", None
+            if os.name != "nt" and _is_windows_path(output_dir):
+                return (
+                    _status("Output directory is a Windows path. Use a server path like /data/datasets.", "warning"),
+                    "0",
+                    "",
+                    None,
+                )
             if not prompt_text:
                 return _status("Create or paste a prompt first.", "warning"), "0", "", None
 
@@ -1880,7 +1891,36 @@ def register_callbacks(app):
                 None,
                 None,
             )
-        samples = evaluation.list_dataset_samples(Path(dataset_path))
+        if os.name != "nt" and _is_windows_path(dataset_path):
+            return (
+                _status("Dataset path is a Windows path. Use a server path like /data/datasets.", "warning"),
+                "0",
+                "",
+                "",
+                "",
+                empty_figs["overall"],
+                empty_figs["items"],
+                empty_figs["fields"],
+                empty_figs["item_fields"],
+                None,
+                None,
+            )
+        dataset_root = Path(dataset_path)
+        if not dataset_root.exists():
+            return (
+                _status(f"Dataset path not found on server: {dataset_path}", "warning"),
+                "0",
+                "",
+                "",
+                "",
+                empty_figs["overall"],
+                empty_figs["items"],
+                empty_figs["fields"],
+                empty_figs["item_fields"],
+                None,
+                None,
+            )
+        samples = evaluation.list_dataset_samples(dataset_root)
         if not samples:
             return (
                 _status("No dataset samples found.", "warning"),
