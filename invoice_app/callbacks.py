@@ -842,6 +842,56 @@ def register_callbacks(app):
             pages_max,
         )
 
+    @app.callback(
+        Output("ds-prompt", "value", allow_duplicate=True),
+        Input("main-tabs", "value"),
+        State("ds-prompt", "value"),
+        State("ds-fonts", "value"),
+        State("ds-colors", "value"),
+        State("ds-augmentations", "value"),
+        State("ds-difficulty", "value"),
+        State("ds-variability", "value"),
+        State("ds-pages-min", "value"),
+        State("ds-pages-max", "value"),
+        State("ds-size-min", "value"),
+        State("ds-size-max", "value"),
+        State("ds-sample-count", "value"),
+        State("ds-languages", "value"),
+        prevent_initial_call=True,
+    )
+    def autofill_prompt_on_tab(
+        tab,
+        current_prompt,
+        fonts,
+        colors,
+        augmentations,
+        difficulty,
+        variability,
+        pages_min,
+        pages_max,
+        s_min,
+        s_max,
+        sample_count,
+        languages,
+    ):
+        if tab != "tab-dataset":
+            raise PreventUpdate
+        if current_prompt and str(current_prompt).strip():
+            return no_update
+        return _build_prompt_text(
+            fonts,
+            colors,
+            augmentations,
+            difficulty,
+            variability,
+            s_min,
+            s_max,
+            sample_count,
+            languages,
+            pages_min,
+            pages_max,
+        )
+
     def _call_openai(api_key: str, model: str, prompt: str, max_tokens: int = 1500):
         try:
             from openai import OpenAI  # type: ignore
@@ -1006,15 +1056,15 @@ def register_callbacks(app):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-def _truncate_message(msg: str, limit: int = 180) -> str:
-    if not msg:
-        return ""
-    clean = " ".join(str(msg).split())
-    return clean if len(clean) <= limit else f"{clean[: limit - 3]}..."
+    def _truncate_message(msg: str, limit: int = 180) -> str:
+        if not msg:
+            return ""
+        clean = " ".join(str(msg).split())
+        return clean if len(clean) <= limit else f"{clean[: limit - 3]}..."
 
 
-def _is_windows_path(path_str: str) -> bool:
-    return bool(re.match(r"^[A-Za-z]:[\\/]", path_str or ""))
+    def _is_windows_path(path_str: str) -> bool:
+        return bool(re.match(r"^[A-Za-z]:[\\/]", path_str or ""))
 
     def _find_template_payload(obj):
         if isinstance(obj, dict):
@@ -1103,12 +1153,30 @@ def _is_windows_path(path_str: str) -> bool:
         pages_min,
         pages_max,
     ):
-        target_dir = _ensure_dir(output_dir)
         lang_list = [lang for lang in (languages or []) if lang] or ["any"]
         per_language = max(1, int(sample_count or 1))
+        total_samples = per_language * len(lang_list)
+        try:
+            target_dir = _ensure_dir(output_dir)
+        except Exception as exc:
+            last_error = f"output directory error: {exc}"
+            print(f"[Dataset] {last_error}")
+            with _JOBS_LOCK:
+                _JOBS[job_id].update(
+                    {
+                        "written": 0,
+                        "errors": 1,
+                        "total": total_samples,
+                        "done": True,
+                        "log_preview": [],
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "last_error": last_error,
+                    }
+                )
+            return
         pages_min, pages_max = _normalize_page_range(pages_min, pages_max)
         page_targets = _build_page_targets(per_language, pages_min, pages_max)
-        total_samples = per_language * len(lang_list)
         total_prompt_tokens = 0
         total_completion_tokens = 0
         log_preview: List[str] = []
@@ -1316,18 +1384,28 @@ def _is_windows_path(path_str: str) -> bool:
         pages_max,
     ):
         try:
+            print(f"[Dataset] Generate clicked (n_clicks={_n})")
             if not api_key or not model:
+                print("[Dataset] Missing API key or model.")
                 return _status("Provide API key and model to generate.", "warning"), "0", "", None
             if not output_dir:
+                print("[Dataset] Missing output directory.")
                 return _status("Set an output directory first.", "warning"), "0", "", None
             if os.name != "nt" and _is_windows_path(output_dir):
+                print(f"[Dataset] Output directory is Windows path: {output_dir}")
                 return (
                     _status("Output directory is a Windows path. Use a server path like /data/datasets.", "warning"),
                     "0",
                     "",
                     None,
                 )
+            try:
+                _ensure_dir(output_dir)
+            except Exception as exc:
+                print(f"[Dataset] Output directory not writable: {exc}")
+                return _status(f"Output directory is not writable: {exc}", "warning"), "0", "", None
             if not prompt_text:
+                print("[Dataset] Missing prompt text.")
                 return _status("Create or paste a prompt first.", "warning"), "0", "", None
 
             lang_list = [lang for lang in (languages or []) if lang] or ["any"]
@@ -1379,12 +1457,12 @@ def _is_windows_path(path_str: str) -> bool:
     def poll_dataset_job(_n, job_id):
         if not job_id:
             print("[Dataset] Poll: no job id")
-            return _status("Idle.", "info"), "0", ""
+            return no_update, no_update, no_update
         with _JOBS_LOCK:
             info = _JOBS.get(job_id)
         if not info:
             print(f"[Dataset] Poll: job {job_id} not found")
-            return _status("Idle.", "info"), "0", ""
+            return no_update, no_update, no_update
         total = info.get("total", 1) or 1
         written = info.get("written", 0)
         errors = info.get("errors", 0)

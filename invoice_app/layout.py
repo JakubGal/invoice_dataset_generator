@@ -748,7 +748,7 @@ def build_layout(app):
                 style={"display": "flex", "alignItems": "center", "gap": "12px", "marginTop": "10px"},
                 children=[
                     html.Progress(id="ds-progress", value="0", max=100, style={"width": "200px"}),
-                    html.Div(id="ds-status", className="feedback"),
+                    html.Div(html.Div("Idle.", className="pill info"), id="ds-status", className="feedback"),
                 ],
             ),
             html.Label("Raw LLM output (first 1–2 samples)"),
