@@ -7,8 +7,14 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
+    wkhtmltopdf \
     libgl1 \
     libglib2.0-0 \
+    libxrender1 \
+    libxext6 \
+    libfontconfig1 \
+    fonts-dejavu-core \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
