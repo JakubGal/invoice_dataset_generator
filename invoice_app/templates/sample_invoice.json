@@ -1,0 +1,159 @@
+{
+  "template": {
+    "title": "ACME Consulting Invoice",
+    "label": "INVOICE",
+    "currency": "$",
+    "accent_color": "#2563eb",
+    "security": {
+      "options": [
+        "diagonal_lines",
+        "watermark"
+      ],
+      "watermark": "Sample"
+    },
+    "page": {
+      "width": "940px",
+      "height": "auto",
+      "padding": "32px",
+      "background_color": "#f8fafc",
+      "background_image": "",
+      "orientation": "portrait",
+      "border_radius": "18px"
+    },
+    "font": {
+      "family": "Inter",
+      "color": "#0f172a",
+      "size": 14
+    },
+    "logo": {
+      "src": "https://dummyimage.com/240x70/111827/ffffff&text=ACME+Consulting",
+      "height": "64px",
+      "alt": "ACME Consulting"
+    },
+    "sections": [
+      {
+        "type": "grid",
+        "title": "Invoice details",
+        "columns": 2,
+        "gap": "12px",
+        "fields": [
+          { "label": "Invoice #", "value_path": "invoice.number" },
+          { "label": "Date", "value_path": "invoice.date" },
+          { "label": "Due date", "value_path": "invoice.due_date" },
+          { "label": "Reference", "value_path": "invoice.reference", "placeholder": "—" }
+        ]
+      },
+      {
+        "type": "panels",
+        "title": "Parties",
+        "panels": [
+          {
+            "heading": "From",
+            "fields": [
+              { "label": "Company", "value_path": "seller.name" },
+              { "label": "Contact", "value_path": "seller.contact" },
+              { "label": "Email", "value_path": "seller.email" },
+              { "label": "Address", "value_path": "seller.address" }
+            ]
+          },
+          {
+            "heading": "Bill to",
+            "fields": [
+              { "label": "Company", "value_path": "client.name" },
+              { "label": "Contact", "value_path": "client.contact" },
+              { "label": "Email", "value_path": "client.email" },
+              { "label": "Address", "value_path": "client.address" }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "title": "Line items",
+        "data_path": "items",
+        "columns": [
+          { "label": "Description", "key": "description", "width": "45%" },
+          { "label": "Qty", "key": "qty", "align": "center" },
+          { "label": "Unit price", "key": "unit_price", "format": "currency", "align": "right" },
+          { "label": "Total", "key": "line_total", "format": "currency", "align": "right" }
+        ],
+        "totals": [
+          { "label": "Subtotal", "value_path": "totals.subtotal", "format": "currency" },
+          { "label": "Tax 10%", "value_path": "totals.tax", "format": "currency" },
+          {
+            "label": "Amount due",
+            "value_path": "totals.due",
+            "format": "currency"
+          }
+        ]
+      },
+      {
+        "type": "grid",
+        "title": "Payment",
+        "columns": 2,
+        "fields": [
+          { "label": "Bank", "value_path": "payment.bank" },
+          { "label": "IBAN", "value_path": "payment.iban" },
+          { "label": "Reference", "value_path": "payment.reference" },
+          { "label": "Due date", "value_path": "invoice.due_date" }
+        ]
+      },
+      {
+        "type": "notes",
+        "title": "Notes",
+        "value_path": "notes"
+      }
+    ]
+  },
+  "data": {
+    "invoice": {
+      "number": "INV-2025-014",
+      "date": "2025-12-31",
+      "due_date": "2026-01-30",
+      "reference": "Retainer December"
+    },
+    "seller": {
+      "name": "ACME Consulting LLC",
+      "contact": "Taylor Reed",
+      "email": "taylor@acmeconsulting.test",
+      "address": "742 Evergreen Terrace, Springfield"
+    },
+    "client": {
+      "name": "Bluebird Labs",
+      "contact": "Ava Patel",
+      "email": "ava@bluebirdlabs.test",
+      "address": "18 Crescent Road, Lakeside"
+    },
+    "items": [
+      {
+        "description": "Discovery and planning workshop",
+        "qty": 1,
+        "unit_price": 1200,
+        "line_total": 1200
+      },
+      {
+        "description": "API integration (32 hours)",
+        "qty": 32,
+        "unit_price": 95,
+        "line_total": 3040
+      },
+      {
+        "description": "Design system refinements",
+        "qty": 12,
+        "unit_price": 85,
+        "line_total": 1020
+      }
+    ],
+    "totals": {
+      "subtotal": 5260,
+      "tax": 526,
+      "due": 5786
+    },
+    "payment": {
+      "bank": "Example Bank 12-345",
+      "iban": "GB00 TEST 0000 0000 0000 00",
+      "reference": "INV-2025-014"
+    },
+    "notes": "Thank you for your business! Payment is due within 30 days of invoice date."
+  }
+}

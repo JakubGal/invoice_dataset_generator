@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: invoice-app
+    env: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 8050
