@@ -19,4 +19,4 @@ COPY . .
 ENV PORT=8050
 EXPOSE 8050
 
-CMD ["gunicorn", "invoice_app.app:server", "--bind", "0.0.0.0:${PORT}", "--workers", "2", "--threads", "4", "--timeout", "180"]
+CMD ["sh", "-c", "gunicorn invoice_app.app:server --bind 0.0.0.0:${PORT} --workers 2 --threads 4 --timeout 180"]
