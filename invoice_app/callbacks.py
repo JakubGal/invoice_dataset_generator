@@ -2091,8 +2091,13 @@ def register_callbacks(app):
     ):
         empty_figs = _build_eval_figures({})
         resolved_dataset_path = dataset_path
-        if uploaded_dataset_path and (not dataset_path or str(dataset_path) == str(uploaded_dataset_path)):
-            resolved_dataset_path = uploaded_dataset_path
+        if uploaded_dataset_path:
+            if not dataset_path:
+                resolved_dataset_path = uploaded_dataset_path
+            else:
+                candidate = Path(dataset_path)
+                if not candidate.exists():
+                    resolved_dataset_path = uploaded_dataset_path
         if not resolved_dataset_path:
             return (
                 _status("Pick a dataset first.", "warning"),
