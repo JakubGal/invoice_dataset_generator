@@ -17,9 +17,9 @@ def build_layout(app):
     api_key_alt_default = os.environ.get("OPENAI_API_KEY_ALT", "")
     api_base_url_alt_default = os.environ.get(
         "OPENAI_BASE_URL_ALT",
-        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     )
-    api_key_alt_match_default = os.environ.get("OPENAI_MODEL_MATCH_ALT", "")
+    api_key_alt_match_default = os.environ.get("OPENAI_MODEL_MATCH_ALT", "qwen")
     api_key_hint = (
         "Loaded from OPENAI_API_KEY environment variable."
         if api_key_default
@@ -43,12 +43,15 @@ def build_layout(app):
     api_base_url_alt_hint = (
         "Loaded from OPENAI_BASE_URL_ALT environment variable."
         if os.environ.get("OPENAI_BASE_URL_ALT")
-        else "Default: Alibaba Model Studio compatible endpoint (override via OPENAI_BASE_URL_ALT)."
+        else (
+            "Default: Alibaba Model Studio intl endpoint "
+            "(use https://dashscope.aliyuncs.com/compatible-mode/v1 for China region)."
+        )
     )
     api_key_alt_match_hint = (
         "Loaded from OPENAI_MODEL_MATCH_ALT environment variable."
-        if api_key_alt_match_default
-        else "Comma-separated tokens. If a model name contains a token, the secondary key/base is used."
+        if os.environ.get("OPENAI_MODEL_MATCH_ALT")
+        else "Default: qwen. Comma-separated tokens; if a model name contains a token, the secondary key/base is used."
     )
 
     invoice_tab = html.Div(
@@ -978,7 +981,13 @@ def build_layout(app):
                                     {"label": "Claude 3 Haiku (2024-03-07)", "value": "claude-3-haiku-20240307"},
                                     {"label": "Seed1.6-vision", "value": "Seed1.6-vision"},
                                     {"label": "TeleMMM-2.0", "value": "TeleMMM-2.0"},
+                                    {"label": "Qwen Plus", "value": "qwen-plus"},
+                                    {"label": "Qwen Max", "value": "qwen-max"},
+                                    {"label": "Qwen VL Plus", "value": "qwen-vl-plus"},
+                                    {"label": "Qwen VL Max", "value": "qwen-vl-max"},
+                                    {"label": "Qwen3 VL Plus (2025-12-19)", "value": "qwen3-vl-plus-2025-12-19"},
                                     {"label": "Qwen3-Omni-30B-A3B-Instruct", "value": "Qwen3-Omni-30B-A3B-Instruct"},
+                                    {"label": "Qwen3 Omni Flash", "value": "qwen3-omni-flash"},
                                     {"label": "Qwen3 Omni Flash Realtime (2025-12-01)", "value": "qwen3-omni-flash-realtime-2025-12-01"},
                                     {"label": "Nemotron Nano V2 VL (12B)", "value": "Nemotron Nano V2 VL (12B)"},
                                     {"label": "Gemini 2.5 Pro", "value": "gemini-2.5-pro"},

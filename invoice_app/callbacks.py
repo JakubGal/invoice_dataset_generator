@@ -2090,6 +2090,13 @@ def register_callbacks(app):
         max_pages,
     ):
         empty_figs = _build_eval_figures({})
+        dataset_path = (dataset_path or "").strip()
+        api_key = (api_key or "").strip()
+        api_base_url = (api_base_url or "").strip()
+        api_key_alt = (api_key_alt or "").strip()
+        api_base_url_alt = (api_base_url_alt or "").strip()
+        gemini_api_key = (gemini_api_key or "").strip()
+        anthropic_api_key = (anthropic_api_key or "").strip()
         resolved_dataset_path = dataset_path
         if uploaded_dataset_path:
             if not dataset_path:

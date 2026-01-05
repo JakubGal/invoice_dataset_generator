@@ -1101,13 +1101,25 @@ def _parse_llm_json(content: str) -> Any:
         return json.loads(content)
     except Exception:
         pass
+    try:
+        return json.JSONDecoder(strict=False).decode(content)
+    except Exception:
+        pass
     match = re.search(r"\{.*\}", content, re.DOTALL)
     if match:
         snippet = _strip_code_fence(match.group(0))
         try:
             return json.loads(snippet)
         except Exception as exc:
-            raise RuntimeError(f"LLM JSON could not be parsed. Snippet: {_snippet(snippet)}") from exc
+            try:
+                return json.JSONDecoder(strict=False).decode(snippet)
+            except Exception:
+                pass
+            cleaned = re.sub(r",\s*([}\]])", r"\1", snippet)
+            try:
+                return json.loads(cleaned)
+            except Exception:
+                raise RuntimeError(f"LLM JSON could not be parsed. Snippet: {_snippet(snippet)}") from exc
     raise RuntimeError(f"LLM JSON could not be parsed. Snippet: {_snippet(content)}")
 
 
@@ -1117,6 +1129,27 @@ def _normalize_llm_output(parsed: Any) -> Dict[str, Any]:
             return parsed["data"]
         return parsed
     raise RuntimeError("LLM output is not a JSON object.")
+
+
+def _is_qwen_realtime_model(model: str) -> bool:
+    return "qwen3-omni-flash-realtime" in (model or "").lower()
+
+
+def _is_qwen_stream_model(model: str) -> bool:
+    norm = (model or "").lower()
+    return "qwen3-omni-flash" in norm and "realtime" not in norm
+
+
+def _collect_streamed_text(stream) -> str:
+    chunks: List[str] = []
+    for event in stream:
+        choice = event.choices[0] if event.choices else None
+        if not choice:
+            continue
+        delta = getattr(choice, "delta", None)
+        if delta and getattr(delta, "content", None):
+            chunks.append(delta.content)
+    return "".join(chunks)
 
 
 def _gemini_generate_content(
@@ -1216,34 +1249,41 @@ def llm_extract_text(
     gemini_api_key: Optional[str] = None,
     anthropic_api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
+    if model and "qwen" in model.lower():
+        max_tokens = max(max_tokens, 4096)
     if is_gemini_model(model):
         if not gemini_api_key:
             raise RuntimeError("Missing Gemini API key.")
         prompt = _build_llm_prompt()
         clipped = text if len(text) <= 12000 else text[:12000]
         gemini_max = max(max_tokens, 4096)
-        content = _gemini_generate_content(
-            gemini_api_key,
-            model,
-            [f"{prompt}\n\nTEXT:\n{clipped}"],
-            gemini_max,
-        )
+        def _call_gemini(text_payload: str, out_tokens: int) -> str:
+            return _gemini_generate_content(
+                gemini_api_key,
+                model,
+                [f"{prompt}\n\nTEXT:\n{text_payload}"],
+                out_tokens,
+            )
+
         try:
+            content = _call_gemini(clipped, gemini_max)
             parsed = _parse_llm_json(content)
         except Exception as exc:  # noqa: BLE001
-            if gemini_max < 8192:
-                content = _gemini_generate_content(
-                    gemini_api_key,
-                    model,
-                    [f"{prompt}\n\nTEXT:\n{clipped}"],
-                    8192,
-                )
-                try:
-                    parsed = _parse_llm_json(content)
-                except Exception as exc2:  # noqa: BLE001
-                    raise RuntimeError(f"Gemini response parse failed ({model}): {exc2}") from exc2
+            msg = str(exc).lower()
+            retry_text = clipped
+            retry_tokens = gemini_max
+            if "no text parts" in msg and len(clipped) > 6000:
+                retry_text = clipped[:6000]
+                retry_tokens = max(retry_tokens, 8192)
+            elif gemini_max < 8192:
+                retry_tokens = 8192
             else:
                 raise RuntimeError(f"Gemini response parse failed ({model}): {exc}") from exc
+            try:
+                content = _call_gemini(retry_text, retry_tokens)
+                parsed = _parse_llm_json(content)
+            except Exception as exc2:  # noqa: BLE001
+                raise RuntimeError(f"Gemini response parse failed ({model}): {exc2}") from exc2
         return _normalize_llm_output(parsed)
     if is_claude_model(model):
         if not anthropic_api_key:
@@ -1259,6 +1299,8 @@ def llm_extract_text(
         return _normalize_llm_output(parsed)
     if not api_key:
         raise RuntimeError("Missing API key.")
+    if _is_qwen_realtime_model(model):
+        raise RuntimeError("Qwen realtime models are not supported via this endpoint. Use qwen3-omni-flash.")
     try:
         from openai import OpenAI  # type: ignore
     except Exception as exc:  # noqa: BLE001
@@ -1271,13 +1313,26 @@ def llm_extract_text(
         {"role": "user", "content": f"{prompt}\n\nTEXT:\n{clipped}"},
     ]
     try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0.0,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-        )
+        if _is_qwen_stream_model(model):
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.0,
+                max_tokens=max_tokens,
+                stream=True,
+                stream_options={"include_usage": True},
+                modalities=["text"],
+            )
+            content = _collect_streamed_text(stream)
+        else:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.0,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+            content = resp.choices[0].message.content if resp and resp.choices else ""
     except Exception as exc:  # noqa: BLE001
         msg = str(exc)
         if "response_format" in msg or "json_object" in msg:
@@ -1288,11 +1343,11 @@ def llm_extract_text(
                     temperature=0.0,
                     max_tokens=max_tokens,
                 )
+                content = resp.choices[0].message.content if resp and resp.choices else ""
             except Exception as exc2:  # noqa: BLE001
                 raise RuntimeError(f"LLM request failed ({model}): {exc2}") from exc2
         else:
             raise RuntimeError(f"LLM request failed ({model}): {exc}") from exc
-    content = resp.choices[0].message.content if resp and resp.choices else ""
     if not content:
         raise RuntimeError("LLM returned empty content.")
     try:
@@ -1356,6 +1411,10 @@ def llm_extract_vision(
         return _normalize_llm_output(parsed)
     if not api_key:
         raise RuntimeError("Missing API key.")
+    if _is_qwen_realtime_model(model):
+        raise RuntimeError("Qwen realtime models are not supported for vision.")
+    if _is_qwen_stream_model(model):
+        raise RuntimeError("Qwen3 Omni Flash does not support vision via this endpoint. Use a vision model.")
     try:
         from openai import OpenAI  # type: ignore
     except Exception as exc:  # noqa: BLE001
